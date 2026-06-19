@@ -17,7 +17,8 @@ const config: CodegenConfig = {
       plugins: [],
     },
     "./types/admin.generated.d.ts": {
-      preset,
+      // Work around a GraphQL type identity mismatch under pnpm resolution.
+      preset: preset as any,
       presetConfig: {
         apiType: ApiType.Admin,
       },

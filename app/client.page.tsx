@@ -1,152 +1,280 @@
 "use client";
 
-import { graphql } from "@/lib/gql";
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { Button, LegacyCard as Card, Page, Text } from "@shopify/polaris";
-import Link from "next/link";
-import { useState } from "react";
-import { doServerAction } from "./actions";
-import { useGraphQL } from "./hooks/useGraphQL";
+import {
+  Page,
+  Card,
+  Text,
+  Button,
+  BlockStack,
+  InlineStack,
+  Badge,
+  Box,
+  TextField,
+  Banner,
+  List,
+  Link,
+} from "@shopify/polaris";
+import { useCallback, useEffect, useState } from "react";
 
-interface Data {
-  name: string;
-  height: string;
-}
+const REDIRECT_THEME_ZIP =
+  "https://github.com/Shopify/hydrogen-redirect-theme/archive/refs/heads/main.zip";
 
-const GET_SHOP = graphql(`
-  query getShop {
-    shop {
-      name
+const FALLBACK_STOREFRONT_URL =
+  "https://commerce-nine-ecru-56.vercel.app/collections/all";
+
+const DEFAULT_STOREFRONT_URL =
+  process.env.NEXT_PUBLIC_STOREFRONT_URL || FALLBACK_STOREFRONT_URL;
+
+function getHostname(url: string) {
+  try {
+    return new URL(url.trim()).hostname;
+  } catch {
+    try {
+      return new URL(FALLBACK_STOREFRONT_URL).hostname;
+    } catch {
+      return "commerce-nine-ecru-56.vercel.app";
     }
   }
-`);
+}
+
+function getPathRedirect(url: string) {
+  try {
+    const parsed = new URL(url.trim());
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return path === "/" ? null : path;
+  } catch {
+    return "/collections/all";
+  }
+}
 
 export default function Home() {
-  const [data, setData] = useState<Data | null>(null);
-  const [serverActionResult, setServerActionResult] = useState<{
-    status: "success" | "error";
-  }>();
+  const [storefrontUrl, setStorefrontUrl] = useState(DEFAULT_STOREFRONT_URL);
+  const [storeHandle, setStoreHandle] = useState<string | null>(null);
 
-  // useGraphQL is a hook that uses Tanstack Query to query Shopify GraphQL, everything is typed!
-  const {
-    data: graphqlData,
-    isLoading: graphqlLoading,
-    error: graphqlError,
-  } = useGraphQL(GET_SHOP);
+  const hostname = getHostname(storefrontUrl);
+  const pathRedirect = getPathRedirect(storefrontUrl);
 
-  const app = useAppBridge();
-
-  const handleGetAPIRequest = async () => {
+  const loadShop = useCallback(async () => {
     try {
-      // global fetch has tokens automatically added
-      // https://shopify.dev/docs/api/app-bridge-library/apis/resource-fetching
-      const response = await fetch("/api/hello");
-      const result = (await response.json()) as { data: Data };
-      setData(result.data);
-    } catch (err) {
-      console.log(err);
+      const res = await fetch("shopify:admin/api/graphql.json", {
+        method: "POST",
+        body: JSON.stringify({
+          query: `query { shop { myshopifyDomain } }`,
+        }),
+      });
+      const { data } = await res.json();
+      setStoreHandle(
+        data.shop.myshopifyDomain.replace(".myshopify.com", ""),
+      );
+    } catch (error) {
+      console.error("Failed to load shop:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadShop();
+  }, [loadShop]);
+
+  const openCheckoutEditor = async () => {
+    try {
+      const res = await fetch("shopify:admin/api/graphql.json", {
+        method: "POST",
+        body: JSON.stringify({
+          query: `
+            query {
+              shop { myshopifyDomain }
+              checkoutProfiles(first: 1) {
+                nodes { id }
+              }
+            }
+          `,
+        }),
+      });
+
+      const { data } = await res.json();
+      const handle = data.shop.myshopifyDomain.replace(".myshopify.com", "");
+      const profileId = data.checkoutProfiles.nodes[0].id.split("/").pop();
+      const extensionId = process.env.NEXT_PUBLIC_CHECKOUT_EXTENSION_ID;
+
+      window.open(
+        `https://admin.shopify.com/store/${handle}` +
+          `/settings/checkout/editor/profiles/${profileId}` +
+          `?page=checkout&config_panel_extension=${extensionId}`,
+        "_top",
+      );
+    } catch (error) {
+      console.error("Failed to open checkout editor:", error);
     }
   };
 
+  const openThemesAdmin = () => {
+    if (!storeHandle) return;
+    window.open(
+      `https://admin.shopify.com/store/${storeHandle}/themes`,
+      "_top",
+    );
+  };
+
   return (
-    <Page title="Home">
-      <div className="flex items-center justify-center gap-1 p-2 bg-slate-800 text-white rounded-lg mb-2 shadow-lg">
-        <p className="font-medium text-[1rem]">
-          We can also use tailwindcss in this project!
-        </p>
-      </div>
-      <Card
-        sectioned
-        title="NextJs API Routes"
-        primaryFooterAction={{
-          content: "Call API",
-          onAction: handleGetAPIRequest,
-        }}
-      >
-        <Text as="p" variant="bodyMd">
-          Call a NextJS api route from within your app. The request is verified
-          using session tokens.
-        </Text>
-        {data && (
-          <Text as="h1" variant="headingSm">
-            {data.name} is {data.height} tall.
-          </Text>
-        )}
-      </Card>
+    <Page
+      title="Checkout Customizer"
+      subtitle="Send Continue shopping to your headless storefront"
+    >
+      <BlockStack gap="500">
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingLg">
+              Continue shopping → your Next.js store
+            </Text>
 
-      <Card
-        sectioned
-        title="React server actions"
-        primaryFooterAction={{
-          content: "Server action",
-          onAction: async () => {
-            const token = await app.idToken();
-            const response = await doServerAction(token);
-            setServerActionResult(response);
-          },
-        }}
-      >
-        <Text as="p" variant="bodyMd">
-          Call a server action from within your app. The request is verified
-          using session tokens.
-        </Text>
-        {serverActionResult && serverActionResult.status === "success" && (
-          <Text as="h1" variant="headingSm">
-            Server action was successful.
-          </Text>
-        )}
-        {serverActionResult && serverActionResult.status === "error" && (
-          <Text as="h1" variant="headingSm">
-            Server action failed.
-          </Text>
-        )}
-      </Card>
+            <Text as="p" variant="bodyMd">
+              Shopify does not let you edit the built-in Thank you button URL
+              directly. Use Shopify&apos;s{" "}
+              <strong>Hydrogen redirect theme</strong> so the native button
+              sends customers to your headless storefront.
+            </Text>
 
-      <Card sectioned title="Use Tanstack Query to query Shopify GraphQL">
-        <Text as="p" variant="bodyMd">
-          Use Tanstack Query to query Shopify&apos;s GraphQL API directly from
-          the client.
-        </Text>
-        {graphqlLoading && <p>Loading...</p>}
-        {graphqlData && <p>{graphqlData.shop.name}</p>}
-        {graphqlError && <p>{graphqlError.message}</p>}
-      </Card>
+            <InlineStack gap="200">
+              <Badge tone="success">Recommended</Badge>
+              <Badge tone="info">No checkout block needed</Badge>
+            </InlineStack>
+          </BlockStack>
+        </Card>
 
-      <Card sectioned title="Shopify App Bridge">
-        <Text as="p" variant="bodyMd">
-          Use the direct graphql api provided by Shopify App Bridge. This
-          automatically uses an authenticated graphql route, no need to add
-          tokens.
-        </Text>
-        <Button
-          onClick={async () => {
-            const res = await fetch("shopify:admin/api/graphql.json", {
-              method: "POST",
-              body: JSON.stringify({
-                query: /* GraphQL */ `
-                  query {
-                    shop {
-                      name
-                    }
-                  }
-                `,
-              }),
-            });
-            const { data } = await res.json();
-            console.log("graphql response", data);
-          }}
-        >
-          GraphQL Query - Check the console for the response
-        </Button>
-      </Card>
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingMd">
+              Your storefront URL
+            </Text>
 
-      <Card sectioned title="Shopify App Bridge">
-        <Text as="p" variant="bodyMd">
-          Use Shopify App Bridge to interact with the Shopify admin. The request
-          uses offline session tokens. This uses Shopify App Bridge v4.
-        </Text>
-        <Link href="/new">New page using next/link</Link>
-      </Card>
+            <TextField
+              label="Next.js storefront URL"
+              value={storefrontUrl}
+              onChange={setStorefrontUrl}
+              autoComplete="off"
+              helpText="Used below to generate redirect theme settings for you."
+            />
+
+            <Banner tone="info">
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">
+                  <strong>Theme settings → Hostname:</strong> {hostname}
+                </Text>
+                {pathRedirect ? (
+                  <Text as="p" variant="bodyMd">
+                    <strong>Theme settings → Custom redirects:</strong>
+                    <br />
+                    <code>{`/>${pathRedirect}`}</code>
+                  </Text>
+                ) : (
+                  <Text as="p" variant="bodyMd">
+                    Leave <strong>Custom redirects</strong> empty (storefront
+                    homepage).
+                  </Text>
+                )}
+              </BlockStack>
+            </Banner>
+
+            <Box>
+              <InlineStack gap="200">
+                <Button
+                  variant="primary"
+                  url={REDIRECT_THEME_ZIP}
+                  external
+                >
+                  Download redirect theme
+                </Button>
+                <Button onClick={openThemesAdmin} disabled={!storeHandle}>
+                  Open Themes in Admin
+                </Button>
+              </InlineStack>
+            </Box>
+          </BlockStack>
+        </Card>
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">
+              Checkout header extension
+            </Text>
+
+            <Text as="p" variant="bodyMd">
+              Separately, configure the checkout header logo extension in the
+              checkout editor.
+            </Text>
+
+            <Box>
+              <Button onClick={openCheckoutEditor}>
+                Configure checkout header
+              </Button>
+            </Box>
+          </BlockStack>
+        </Card>
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">
+              Setup steps
+            </Text>
+
+            <List type="number">
+              <List.Item>
+                Click <strong>Download redirect theme</strong> above (ZIP from
+                Shopify GitHub).
+              </List.Item>
+              <List.Item>
+                In Shopify Admin go to{" "}
+                <strong>Online Store → Themes → Add theme → Upload zip</strong>{" "}
+                (or use <strong>Open Themes in Admin</strong>).
+              </List.Item>
+              <List.Item>
+                On the uploaded theme, click <strong>Customize</strong>.
+              </List.Item>
+              <List.Item>
+                Go to <strong>Theme settings → Storefront</strong>.
+              </List.Item>
+              <List.Item>
+                Set <strong>Hostname</strong> to:{" "}
+                <code>{hostname}</code> (no https://).
+              </List.Item>
+              {pathRedirect ? (
+                <List.Item>
+                  In <strong>Custom redirects</strong>, add one line:{" "}
+                  <code>{`/>${pathRedirect}`}</code>
+                </List.Item>
+              ) : null}
+              <List.Item>
+                Click <strong>Save</strong>, then <strong>Publish</strong> the
+                redirect theme.
+              </List.Item>
+              <List.Item>
+                Complete a test order. Click the built-in{" "}
+                <strong>Continue shopping</strong> button — you should land on{" "}
+                <Link url={storefrontUrl} target="_blank">
+                  your storefront
+                </Link>
+                .
+              </List.Item>
+            </List>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">
+              How it works
+            </Text>
+
+            <Text as="p" variant="bodyMd">
+              Customer clicks the native <strong>Continue shopping</strong> on
+              the Thank you page → goes to your{" "}
+              <code>.myshopify.com</code> store → redirect theme immediately
+              sends them to <code>{hostname}</code>
+              {pathRedirect ? pathRedirect : ""}. No extra checkout block.
+            </Text>
+          </BlockStack>
+        </Card>
+
+    
+      </BlockStack>
     </Page>
   );
 }

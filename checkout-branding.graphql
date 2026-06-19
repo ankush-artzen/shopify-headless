@@ -1,0 +1,149 @@
+# 1) Get published checkout profile id
+query checkoutProfiles {
+  checkoutProfiles(first: 1, query: "is_published:true") {
+    edges {
+      node {
+        id
+        name
+      }
+    }
+  }
+}
+
+# 2) Apply QPlXwaEk with weight 700 and map headings to SECONDARY
+mutation SetCheckoutBranding($profileId: ID!) {
+  checkoutBrandingUpsert(
+    checkoutProfileId: $profileId
+    checkoutBrandingInput: {
+      designSystem: {
+        typography: {
+          secondary: {
+            base: {
+              sources: "local('QPlXwaEk'), sans-serif"
+              weight: 700
+            }
+          }
+        }
+      }
+      customizations: {
+        headingLevel1: {
+          typography: {
+            font: SECONDARY
+            weight: BOLD
+          }
+          color: "#000000"
+        }
+      }
+    }
+  ) {
+    checkoutBranding {
+      designSystem {
+        typography {
+          secondary {
+            base {
+              sources
+              weight
+            }
+          }
+        }
+      }
+      customizations {
+        headingLevel1 {
+          typography {
+            font
+            weight
+          }
+          color
+        }
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+
+# Variables for mutation:
+# {
+#   "profileId": "gid://shopify/CheckoutProfile/1"
+# }
+mutation SetCheckoutBranding($profileId: ID!, $fontFileId: ID!) {
+  checkoutBrandingUpsert(
+    checkoutProfileId: $profileId
+    checkoutBrandingInput: {
+      designSystem: {
+        typography: {
+          secondary: {
+            customFontGroup: {
+              base: {
+                genericFileId: $fontFileId
+                weight: 700
+              }
+              bold: {
+                genericFileId: $fontFileId
+                weight: 700
+              }
+            }
+          }
+        }
+      }
+      customizations: {
+        headingLevel1: {
+          typography: {
+            font: SECONDARY
+            weight: BOLD
+          }
+        }
+      }
+    }
+  ) {
+    userErrors {
+      field
+      message
+    }
+  }
+}
+
+
+{
+  "profileId": "gid://shopify/CheckoutProfile/6547931423",
+  "fontFileId": "gid://shopify/GenericFile/56749052690719"
+}
+
+
+{
+  "errors": [
+    {
+      "message": "Access denied for checkoutBrandingUpsert field. Required access: access to checkout branding settings and the shop must be on a Plus plan or a Development store plan. User must have `preferences` permission to modify.",
+      "locations": [
+        {
+          "line": 2,
+          "column": 3
+        }
+      ],
+      "extensions": {
+        "code": "ACCESS_DENIED",
+        "documentation": "https://shopify.dev/api/usage/access-scopes",
+        "requiredAccess": "access to checkout branding settings and the shop must be on a Plus plan or a Development store plan. User must have `preferences` permission to modify."
+      },
+      "path": [
+        "checkoutBrandingUpsert"
+      ]
+    }
+  ],
+  "data": {
+    "checkoutBrandingUpsert": null
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 10,
+      "actualQueryCost": 10,
+      "throttleStatus": {
+        "maximumAvailable": 20000,
+        "currentlyAvailable": 19990,
+        "restoreRate": 1000
+      }
+    }
+  }
+}
